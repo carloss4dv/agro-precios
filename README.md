@@ -64,7 +64,7 @@ console.log(datosEnKg[0].precios[0].valor); // Ej: 0.2358 €/kg
 
 ## Opciones avanzadas
 
-```javascrip
+```typescript
 // Filtrado por fecha
 const filtro = { dia: 15, mes: 3, año: 2025 };
 const datosFiltrados = parsePrecios('archivo.xlsx', filtro);
@@ -73,11 +73,19 @@ const datosFiltrados = parsePrecios('archivo.xlsx', filtro);
 descargarPrecios(2024, './mis-descargas');
 ```
 
+## Ejemplo
+
+En el directorio src de encuentra el script **ejemplo.ts**
+
+```bash
+npx ts-node src/ejemplo.ts
+```
+
 ## Configuracion recomendada
 
- -*Node.js v18+*
- -*TypeScript v5+*
- -*Archivos fuente en UTF-8*
+ -**Node.js v18+**
+ -**TypeScript v5+**
+ -**Archivos fuente en UTF-8**
  
 ## Licencia
 
