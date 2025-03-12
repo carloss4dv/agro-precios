@@ -45,7 +45,7 @@ const datosEnKg = convertirAEurosPorKg(datos);
 console.log(datosEnKg[0].precios[0].valor); // Ej: 0.2358 €/kg
 ```
 
-##Ejemplo de estructura de datos
+## Ejemplo de estructura de datos
 
 ```json
 {
