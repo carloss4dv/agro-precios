@@ -75,7 +75,7 @@ descargarPrecios(2024, './mis-descargas');
 
 ## Ejemplo
 
-En el directorio src de encuentra el script **ejemplo.ts**
+En el directorio src se encuentra el script **ejemplo.ts**
 
 ```bash
 npx ts-node src/ejemplo.ts
