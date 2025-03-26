@@ -69,12 +69,21 @@ export class ExcelParser {
   }
 
   private static parseDate(dateStr: string): Date {
-    if (!dateStr?.match(/^\d{2}\/\d{2}$/)) {
-      throw new Error(`Formato de fecha inválido: ${dateStr}`);
-    }
-    
-    const [day, month] = dateStr.split('/').map(Number);
-    return new Date(2025, month - 1, day);
+      // Validar existencia y formato
+      if (!dateStr || !dateStr.match(/^\d{1,2}\/\d{1,2}$/)) {
+          return new Date(NaN); // Fecha inválida
+      }
+      
+      try {
+          const [day, month] = dateStr.split('/').map(Number);
+          // Validar rangos reales
+          if (month < 1 || month > 12 || day < 1 || day > 31) {
+              return new Date(NaN);
+          }
+          return new Date(2025, month - 1, day);
+      } catch {
+          return new Date(NaN);
+      }
   }
 
   private static parseValue(value: any): number | null {
