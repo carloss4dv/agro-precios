@@ -68,5 +68,5 @@ export const descargarPrecios = async (año: number, carpetaDestino: string = '.
 };
 
 // Exportaciones existentes
-export type { Precio, FiltroFecha };
+export type { Precio, FiltroFecha } from './parser/types';
 export { ExcelParser, convertirAEurosPorKg};
