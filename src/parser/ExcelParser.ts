@@ -75,12 +75,12 @@ export class ExcelParser {
       }
       
       try {
-          const [day, month] = dateStr.split('/').map(Number);
+          const [day, month, year] = dateStr.split('/').map(Number);
           // Validar rangos reales
           if (month < 1 || month > 12 || day < 1 || day > 31) {
               return new Date(NaN);
           }
-          return new Date(2025, month - 1, day);
+          return new Date(year, month - 1, day);
       } catch {
           return new Date(NaN);
       }
