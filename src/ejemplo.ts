@@ -2,12 +2,18 @@ import { descargarPrecios, parsePrecios,convertirAEurosPorKg } from './index';
 
 async function main() {
   try {
-    const ruta = await descargarPrecios(2025);
-    const datos = parsePrecios(ruta);
-    console.log(`Descargados ${datos.length} registros`);
-    console.log('Primer registro:', datos[0]);
-    const convertidos = convertirAEurosPorKg(datos)
-    console.log('Primer registro:', convertidos[0])
+
+    for (let i = 2019; i <= 2024; i++) {
+      const ruta = await descargarPrecios(i);
+      const datos = parsePrecios(ruta);
+      const convertidos = convertirAEurosPorKg(datos)
+
+      for (const registro of convertidos) {
+        console.log(registro) 
+      }
+    }
+
+
   } catch (error) {
     // Verificación de tipo segura
     if (error instanceof Error) {
