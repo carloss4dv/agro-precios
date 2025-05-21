@@ -79,9 +79,12 @@ export class ExcelParser {
           }
           
           // Filtrar por fecha si es necesario
-          const preciosFiltrados = filtro
+          let preciosFiltrados = filtro
             ? preciosSemanales.filter(p => this.matchesFilter(p.fecha, filtro))
             : preciosSemanales;
+            
+          // Corregir posibles problemas con las fechas duplicadas y orden de semanas
+          preciosFiltrados = this.corregirFechasYSemanas(preciosFiltrados);
           
           // Sólo agregar si hay precios después del filtrado o no hay filtro
           if (!filtro || preciosFiltrados.length > 0) {
@@ -442,6 +445,14 @@ export class ExcelParser {
         const excelDate = XLSX.SSF.parse_date_code(Number(dateStr));
         if (excelDate && excelDate.d && excelDate.m) {
           const y = excelDate.y || year;
+          
+          // Verificar que el año no sea muy anterior al año esperado (máximo 2 años)
+          const añoActual = new Date().getFullYear();
+          if (y < year - 2 || y > añoActual + 1) {
+            // Usar el año esperado en lugar del año incorrecto
+            return new Date(year, excelDate.m - 1, excelDate.d);
+          }
+          
           return new Date(y, excelDate.m - 1, excelDate.d);
         }
       } catch (e) {
@@ -455,6 +466,14 @@ export class ExcelParser {
         const [day, month, specificYear] = dateStr.split('/').map(s => parseInt(s.trim(), 10));
         if (!isNaN(day) && !isNaN(month) && !isNaN(specificYear) && 
             month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+          
+          // Verificar que el año específico no sea muy anterior al año esperado (máximo 2 años)
+          const añoActual = new Date().getFullYear();
+          if (specificYear < year - 2 || specificYear > añoActual + 1) {
+            // Usar el año esperado en lugar del año incorrecto
+            return new Date(year, month - 1, day);
+          }
+          
           // Usar el año específico en lugar del año general
           return new Date(specificYear, month - 1, day);
         }
@@ -898,6 +917,39 @@ export class ExcelParser {
     
     // En Excel, los días se cuentan a partir del 1 (1/1/1900 = 1)
     return days;
+  }
+
+  // Corregir fechas duplicadas y ordenar correctamente por fecha
+  private static corregirFechasYSemanas(precios: Array<{semana: string, fecha: Date, valor: number | null}>): Array<{semana: string, fecha: Date, valor: number | null}> {
+    if (!precios || precios.length === 0) {
+      return precios;
+    }
+    
+    // 1. Filtrar fechas válidas
+    const preciosValidos = precios.filter(p => p.fecha instanceof Date && !isNaN(p.fecha.getTime()));
+    
+    // 2. Ordenar por fecha cronológicamente
+    const preciosOrdenados = [...preciosValidos].sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
+    
+    // 3. Eliminar duplicados de fechas, manteniendo el último valor
+    const fechasUnicas = new Map<string, {semana: string, fecha: Date, valor: number | null}>();
+    preciosOrdenados.forEach(p => {
+      const fechaKey = p.fecha.toISOString().split('T')[0]; // Formato YYYY-MM-DD
+      fechasUnicas.set(fechaKey, p);
+    });
+    
+    // 4. Regenerar los números de semana en secuencia correcta
+    const resultado = Array.from(fechasUnicas.values());
+    
+    // Ordenamos de nuevo para asegurar orden cronológico
+    resultado.sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
+    
+    // Actualizar números de semana basados en el orden
+    return resultado.map((precio, index) => ({
+      semana: `Semana ${String(index + 1).padStart(2, '0')}`,
+      fecha: precio.fecha,
+      valor: precio.valor
+    }));
   }
 }
 
