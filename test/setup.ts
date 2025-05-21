@@ -1,15 +1,5 @@
-// Crea un archivo test/setup.ts
-import { expect } from '@jest/globals';
+// Setup para los tests de Jest
+// Este archivo se usa para configuraciones globales de los tests
 
-expect.extend({
-  toBeNumberOrNull(received) {
-    const pass = typeof received === 'number' || received === null;
-    return {
-      message: () => `Expected ${received} to be number or null`,
-      pass
-    };
-  }
-});
-
-// En el test:
-precio: expect.toBeNumberOrNull()
+// Configuración para manejar pruebas asíncronas más largas
+jest.setTimeout(30000); // 30 segundos para permitir descargas de archivos
