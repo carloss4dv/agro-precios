@@ -435,7 +435,53 @@ export class ExcelParser {
 
     const productoLower = producto.toLowerCase();
 
-    // Corrección de productos erroneamente clasificados en VINO
+    // CORRECCIONES ESPECÍFICAS POR NOMBRE EXACTO DE PRODUCTO
+    // Estas correcciones tienen prioridad sobre las reglas generales
+
+    // Aceites que siempre deben ir a ACEITES VEGETALES Y ACEITUNA DE MESA
+    if (producto === "Aceite de girasol refinado convencional (€/100kg)" ||
+        producto === "Aceite de girasol refinado alto oleico (€/100kg)" ||
+        producto === "Aceite refinado de soja (€/100kg)") {
+      return "ACEITES VEGETALES Y ACEITUNA DE MESA";
+    }
+
+    // REGLAS GENERALES DE CLASIFICACIÓN POR SECTOR
+
+    // Aceites se mantienen en su propio sector
+    if (productoLower.includes('aceite') || 
+        productoLower.includes('aceituna')) {
+      return 'ACEITES VEGETALES Y ACEITUNA DE MESA';
+    }
+
+    // Productos específicos para SEMILLAS OLEAGINOSAS, PROTEICOS Y TORTAS
+    if (productoLower.includes('colza grano') || 
+        productoLower.includes('garbanzos') || 
+        productoLower.includes('lentejas') || 
+        productoLower.includes('habas secas') || 
+        productoLower.includes('guisantes secos') || 
+        productoLower.includes('pipa de girasol') || 
+        productoLower.includes('torta de girasol') || 
+        productoLower.includes('torta de soja') || 
+        productoLower.includes('alfalfa')) {
+      return 'SEMILLAS OLEAGINOSAS, PROTEICOS Y TORTAS';
+    }
+
+    // Correcciones específicas por nombre de producto
+    if (productoLower.includes('col-repollo') || productoLower.includes('col repollo')) {
+      return 'HORTALIZAS';
+    }
+
+    if (productoLower.includes('vino tinto sin dop')) {
+      return 'VINO';
+    }
+
+    if (productoLower.includes('huevos')) {
+      return 'AVES, HUEVOS, CAZA';
+    }
+    
+    // CORRECCIÓN POR SECTOR ACTUAL Y TIPO DE PRODUCTO
+
+    // Corregir productos erróneamente clasificados en VINO
     if (sector === 'VINO') {
       // Productos de semillas oleaginosas frecuentemente clasificados como VINO
       if (productoLower.includes('colza') || 
@@ -472,7 +518,13 @@ export class ExcelParser {
           productoLower.includes('fresa') || 
           productoLower.includes('aguacate') || 
           productoLower.includes('clementina') || 
-          productoLower.includes('satsuma')) {
+          productoLower.includes('satsuma') ||
+          productoLower.includes('caqui') ||
+          productoLower.includes('granada') ||
+          productoLower.includes('níspero') ||
+          productoLower.includes('albaricoque') ||
+          productoLower.includes('higo') ||
+          productoLower.includes('breva')) {
         return 'FRUTAS';
       }
 
@@ -494,7 +546,28 @@ export class ExcelParser {
           productoLower.includes('brócoli') || 
           productoLower.includes('col') || 
           productoLower.includes('repollo') || 
-          productoLower.includes('pepino')) {
+          productoLower.includes('pepino') ||
+          productoLower.includes('puerro') ||
+          productoLower.includes('champiñón') ||
+          productoLower.includes('espárrago') ||
+          productoLower.includes('haba verde') ||
+          productoLower.includes('acelga')) {
+        return 'HORTALIZAS';
+      }
+    }
+
+    // Asegurarse que Tomate, Lechuga, Escarola, etc. van a Hortalizas aunque vengan de Frutas
+    if (sector === 'FRUTAS') {
+      if (productoLower.includes('tomate') || 
+          productoLower.includes('lechuga') || 
+          productoLower.includes('escarola') || 
+          productoLower.includes('espinaca') || 
+          productoLower.includes('alcachofa') || 
+          productoLower.includes('coliflor') || 
+          productoLower.includes('brócoli') || 
+          productoLower.includes('col') || 
+          productoLower.includes('pepino') ||
+          productoLower.includes('pimiento')) {
         return 'HORTALIZAS';
       }
     }
@@ -510,6 +583,35 @@ export class ExcelParser {
       }
     }
 
+    // Corregir productos cárnicos
+    if (sector !== 'BOVINO' && 
+        (productoLower.includes('bovino') || 
+         productoLower.includes('vacuno') || 
+         productoLower.includes('ternera') ||
+         productoLower.includes('animales 8-12 meses') ||
+         productoLower.includes('machos 12-24 meses'))) {
+      return 'BOVINO';
+    }
+
+    if (sector !== 'PORCINO' && 
+        (productoLower.includes('cerdo') || 
+         productoLower.includes('porcino') || 
+         productoLower.includes('lechón'))) {
+      return 'PORCINO';
+    }
+
+    if (sector !== 'OVINO' && 
+        (productoLower.includes('cordero') || 
+         productoLower.includes('ovino') || 
+         productoLower.includes('oveja'))) {
+      return 'OVINO';
+    }
+
+    // Asegurarse que los corderos siempre vayan a OVINO independientemente de su sector actual
+    if (productoLower.includes('cordero')) {
+      return 'OVINO';
+    }
+
     // Corregir productos lácteos
     if (sector !== 'LÁCTEOS') {
       if (productoLower.includes('leche') || 
@@ -519,6 +621,11 @@ export class ExcelParser {
           productoLower.includes('yogur')) {
         return 'LÁCTEOS';
       }
+    }
+
+    // Asegurarse que mantequilla y nata siempre van a LÁCTEOS 
+    if (productoLower.includes('mantequilla') || productoLower.includes('nata')) {
+      return 'LÁCTEOS';
     }
 
     // Corregir productos de cereales
@@ -538,42 +645,36 @@ export class ExcelParser {
       return 'ARROZ';
     }
 
-    // Corregir productos cárnicos
-    if (sector !== 'BOVINO' && 
-        (productoLower.includes('bovino') || 
-         productoLower.includes('vacuno') || 
-         productoLower.includes('ternera'))) {
-      return 'BOVINO';
-    }
-
-    if (sector !== 'PORCINO' && 
-        (productoLower.includes('cerdo') || 
-         productoLower.includes('porcino') || 
-         productoLower.includes('lechón'))) {
-      return 'PORCINO';
-    }
-
-    if (sector !== 'OVINO' && 
-        (productoLower.includes('cordero') || 
-         productoLower.includes('ovino') || 
-         productoLower.includes('oveja'))) {
-      return 'OVINO';
-    }
-
-    // Corregir productos de aceite y aceituna
-    if (sector !== 'ACEITES VEGETALES Y ACEITUNA DE MESA' && 
-        (productoLower.includes('aceite') || 
-         productoLower.includes('oliva') || 
-         productoLower.includes('aceituna'))) {
-      return 'ACEITES VEGETALES Y ACEITUNA DE MESA';
-    }
-
     // Corregir productos de vino
-    if (sector !== 'VINO' && productoLower.includes('vino')) {
-      return 'VINO';
+    if (sector !== 'VINO' && 
+        (productoLower.includes('vino'))) {
+      // Asegurarse que sea específicamente un vino y no un texto que incluya la palabra "vino"
+      if (productoLower.startsWith('vino') || 
+          productoLower.includes('vino tinto') || 
+          productoLower.includes('vino blanco')) {
+        return 'VINO';
+      }
     }
 
-    return sector;
+    // Si llegamos aquí y el sector es vacío o desconocido, intentar determinar por el nombre
+    if (!sector || sector.trim() === '') {
+      // Semillas y proteicos
+      if (productoLower.includes('garbanzos') || 
+          productoLower.includes('lentejas') || 
+          productoLower.includes('habas secas') || 
+          productoLower.includes('pipa de girasol') || 
+          productoLower.includes('torta de girasol') || 
+          productoLower.includes('torta de soja')) {
+        return 'SEMILLAS OLEAGINOSAS, PROTEICOS Y TORTAS';
+      }
+
+      // Si hay aceite en el nombre, debe ir a aceites
+      if (productoLower.includes('aceite')) {
+        return 'ACEITES VEGETALES Y ACEITUNA DE MESA';
+      }
+    }
+
+    return sector || 'SEMILLAS OLEAGINOSAS, PROTEICOS Y TORTAS';  // Por defecto, si no hay sector
   }
 }
 
