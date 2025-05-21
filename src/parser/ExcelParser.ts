@@ -70,14 +70,12 @@ export class ExcelParser {
               valor = this.parseValue(row[j + 3]);
             }
             
-            // Solo agregar entradas con valores no nulos
-            if (valor !== null) {
-              preciosSemanales.push({
-                semana: `Semana ${String(j + 1).padStart(2, '0')}`,
-                fecha: weekDates[j],
-                valor: valor
-              });
-            }
+            // Agregar todas las entradas, incluso con valores nulos
+            preciosSemanales.push({
+              semana: `Semana ${String(j + 1).padStart(2, '0')}`,
+              fecha: weekDates[j],
+              valor: valor
+            });
           }
           
           // Filtrar por fecha si es necesario
