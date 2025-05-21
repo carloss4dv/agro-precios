@@ -1,6 +1,6 @@
 {
   "name": "agro-precios",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
@@ -10,7 +10,7 @@
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",
-    "@types/node": "^22.13.10",
+    "@types/node": "^22.15.21",
     "axios": "^1.8.3",
     "cheerio": "^1.0.0",
     "jest": "^29.7.0",

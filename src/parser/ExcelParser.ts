@@ -10,193 +10,410 @@ export class ExcelParser {
   }
 
   private static processData(rows: any[][], filtro?: FiltroFecha): Precio[] {
+    // Inicializar arreglo de precios
     const precios: Precio[] = [];
-    const weekDates = this.extractWeekDates(rows);
-    let currentSector = '';
-
-    // Primero, identificar los sectores y sus rangos
-    const sectores: { [nombre: string]: { inicio: number, fin: number }} = {};
     
-    // Buscar las celdas de sectores (están en la columna A y suelen estar en mayúsculas)
-    for (let i = 8; i < rows.length; i++) {
-      const row = rows[i];
-      // Celdas de sector son mayúsculas, centradas y suelen tener un color de fondo
-      if (row && row[0] && typeof row[0] === 'string' && /^[A-ZÁÉÍÓÚÑ\s]+$/.test(row[0].toString().trim())) {
-        const sectorName = row[0].toString().trim();
-        if (!sectores[sectorName]) {
-          sectores[sectorName] = { inicio: i, fin: i };
-        } else {
-          sectores[sectorName].fin = i;
-        }
-      }
+    // 1. Detectar estructura del archivo
+    const year = this.extractYearFromRows(rows);
+    
+    // 2. Identificar filas de encabezados (semanas y fechas)
+    const headerRowsData = this.findHeaderRows(rows);
+    if (!headerRowsData) {
+      console.error("No se pudieron detectar las filas de encabezados");
+      return [];
     }
-
-    // Determinamos el rango de cada sector
-    let sectorActual = '';
-    let ultimoSectorInicio = 0;
     
-    Object.entries(sectores).forEach(([sector, rango], idx, array) => {
-      // Si no es el último sector, su fin es el inicio del siguiente
-      if (idx < array.length - 1) {
-        rango.fin = array[idx + 1][1].inicio;
-      } else {
-        // Si es el último, su fin es el final del archivo
-        rango.fin = rows.length;
-      }
-    });
-
-    // Procesamos los datos ahora con los sectores correctamente identificados
-    for (let i = 8; i < rows.length; i++) {
+    const { 
+      headerWeekRow,     // Fila con semanas (Semana 01, Semana 02, etc.)
+      headerDateRow,     // Fila con fechas (DD/MM-DD/MM)
+      dataStartRow       // Fila donde empiezan los datos de productos
+    } = headerRowsData;
+    
+    // 3. Extraer las fechas de las semanas
+    const weekDates = this.extractWeekDates(rows[headerDateRow], year);
+    
+    // 4. Identificar los sectores en el archivo
+    const sectoresInfo = this.identificarSectores(rows, dataStartRow);
+    
+    // 5. Procesar las filas de datos producto por producto
+    let currentSector = '';
+    
+    for (let i = dataStartRow; i < rows.length; i++) {
       const row = rows[i];
-      if (!row || !row.length) continue;
+      if (!row || row.length === 0) continue;
       
-      // Determinar a qué sector pertenece esta fila
-      for (const [sector, rango] of Object.entries(sectores)) {
-        if (i >= rango.inicio && i < rango.fin) {
-          currentSector = sector;
-          break;
-        }
+      // Verificar si es un sector
+      const sector = this.detectarSector(row);
+      if (sector) {
+        currentSector = sector;
+        continue; // Es un encabezado de sector, no un producto
       }
-
-      // Procesar filas de productos - ahora sabemos el sector correcto
-      if (currentSector && row[2]) {
-        const preciosSemanales = weekDates.map((fecha, index) => ({
-          semana: `Semana ${String(index + 1).padStart(2, '0')}`,
-          fecha,
-          valor: this.parseValue(row[3 + index])
-        }));
-
-        const preciosFiltrados = filtro 
-          ? preciosSemanales.filter(p => 
-              p.fecha && !isNaN(p.fecha.getTime()) &&
-              p.fecha.getDate() === filtro.dia &&
-              p.fecha.getMonth() + 1 === filtro.mes &&
-              p.fecha.getFullYear() === filtro.año
-            )
-          : preciosSemanales;
-
-        if (!filtro || preciosFiltrados.length > 0) {
-          precios.push({
-            sector: currentSector,
-            producto: row[2].toString().trim(),
-            especificacion: row[1]?.toString() || '',
-            precios: preciosFiltrados
-          });
+      
+      // Si tenemos un sector y parece una fila de producto
+      if (currentSector && this.isProductRow(row)) {
+        // Encontrar la columna donde está el nombre del producto (generalmente columna 2 o C)
+        const productoInfo = this.encontrarProductoYEspecificacion(row);
+        if (productoInfo) {
+          const { producto, especificacion } = productoInfo;
+          
+          // Extraer los precios semanales
+          const preciosSemanales = [];
+          
+          // Los precios comienzan en columna 3 (índice D)
+          for (let j = 0; j < weekDates.length; j++) {
+            let valor = null;
+            // Asegurar que no nos pasamos del final de la fila
+            if (j + 3 < row.length) {
+              valor = this.parseValue(row[j + 3]);
+            }
+            
+            preciosSemanales.push({
+              semana: `Semana ${String(j + 1).padStart(2, '0')}`,
+              fecha: weekDates[j],
+              valor: valor
+            });
+          }
+          
+          // Filtrar por fecha si es necesario
+          const preciosFiltrados = filtro
+            ? preciosSemanales.filter(p => this.matchesFilter(p.fecha, filtro))
+            : preciosSemanales;
+          
+          // Sólo agregar si hay precios después del filtrado o no hay filtro
+          if (!filtro || preciosFiltrados.length > 0) {
+            precios.push({
+              sector: currentSector,
+              producto,
+              especificacion,
+              precios: preciosFiltrados
+            });
+          }
         }
       }
     }
     
     return precios;
   }
-
-  private static extractWeekDates(rows: any[][]): Date[] {
-    // Encontrar la fila que contiene las fechas de las semanas
-    let dateRowIndex = -1;
-    for (let i = 6; i < 9; i++) {
-      if (rows[i] && rows[i].length > 3) {
-        const thirdCol = rows[i][3];
-        if (thirdCol && typeof thirdCol === 'string' && 
-            (thirdCol.includes('/') || thirdCol.includes('-'))) {
-          dateRowIndex = i;
-          break;
+  
+  // Detectar sector en una fila, considerando que puede ocupar varias columnas
+  private static detectarSector(row: any[]): string | null {
+    // Si la celda A está vacía, verificar si hay celdas de colores de fondo o celdas combinadas
+    // que podrían indicar un sector (esto no podemos detectarlo desde el parser básico)
+    if (row[0] && typeof row[0] === 'string') {
+      const text = row[0].toString().trim();
+      
+      // Criterios para identificar un sector:
+      // - Todo en mayúsculas
+      // - No tiene números (excepto si están en paréntesis al final)
+      // - Longitud mínima
+      // - No comienza con caracteres especiales
+      const esSectorPorTexto = text === text.toUpperCase() && 
+          text.length > 3 && 
+          (!/\d/.test(text.replace(/\(\d+\)$/, '').trim())) &&  // Permitir números solo en paréntesis al final
+          !['(', '*', '-'].includes(text.charAt(0));
+          
+      if (esSectorPorTexto) {
+        // Verificar si hay más texto en la segunda columna (para sectores multicolumna)
+        if (row[1] && typeof row[1] === 'string' && row[1].toString().trim() === row[1].toString().trim().toUpperCase()) {
+          // Combinar las columnas para formar el nombre completo del sector
+          let sectorCompleto = text;
+          let col = 1;
+          
+          // Añadir columnas adicionales si están en mayúsculas y parecen parte del sector
+          while (col < row.length && 
+                 row[col] && 
+                 typeof row[col] === 'string' && 
+                 row[col].toString().trim() === row[col].toString().trim().toUpperCase() &&
+                 row[col].toString().trim().length > 0) {
+            sectorCompleto += ' ' + row[col].toString().trim();
+            col++;
+          }
+          
+          // Limpiar código entre paréntesis al final
+          return this.limpiarNombreSector(sectorCompleto);
         }
-      }
-    }
-    
-    if (dateRowIndex === -1) {
-      throw new Error('Formato de archivo inválido: No se encontró la fila de fechas');
-    }
-    
-    const dateRow = rows[dateRowIndex];
-    
-    // Extraer el año del encabezado
-    let year = this.extractYearFromRows(rows);
-    
-    return dateRow.slice(3, dateRow.length).map(dateRange => {
-      try {
-        if (!dateRange) return new Date(NaN);
         
-        return this.parseDateRange(dateRange.toString(), year);
-      } catch (e) {
-        console.error("Error extrayendo fecha:", e);
-        return new Date(NaN);
+        // Limpiar código entre paréntesis al final
+        return this.limpiarNombreSector(text);
       }
-    });
+      
+      // Detectar sectores que solo tienen un título en mayúsculas
+      // Ej: "ARROZ" en la imagen mostrada
+      if (text === text.toUpperCase() && 
+          text.length > 3 && 
+          !/[0-9()]/.test(text) &&
+          !/^[()\[\]{}*-]/.test(text)) {
+        return text;
+      }
+    }
+    
+    // También buscar sectores basados en el color de fondo (si la información está disponible)
+    // Esto sería más complejo y requeriría acceso a las propiedades de estilo
+    
+    return null;
   }
   
+  // Función para eliminar códigos entre paréntesis al final del nombre de un sector
+  private static limpiarNombreSector(sector: string): string {
+    // Eliminar patrón (n) al final del string, donde n es un número
+    return sector.replace(/\s*\(\d+\)$/, '').trim();
+  }
+  
+  // Identificar todos los sectores en el archivo
+  private static identificarSectores(rows: any[][], startRow: number): { [sector: string]: number[] } {
+    const sectores: { [sector: string]: number[] } = {};
+    
+    for (let i = startRow; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row || row.length === 0) continue;
+      
+      const sector = this.detectarSector(row);
+      if (sector) {
+        if (!sectores[sector]) {
+          sectores[sector] = [];
+        }
+        sectores[sector].push(i);
+      }
+    }
+    
+    return sectores;
+  }
+  
+  // Encontrar el nombre del producto y la especificación
+  private static encontrarProductoYEspecificacion(row: any[]): { producto: string, especificacion: string } | null {
+    // Por defecto, la columna 2 (índice C) suele contener el nombre del producto
+    if (row[2] && typeof row[2] === 'string' && row[2].toString().trim().length > 0) {
+      // La especificación normalmente está en la columna 1 (índice B)
+      const especificacion = row[1] ? row[1].toString().trim() : '';
+      return {
+        producto: row[2].toString().trim(),
+        especificacion
+      };
+    }
+    
+    // Si no hay nada en columna 2, buscar en las columnas 0 y 1
+    for (let i = 0; i <= 1; i++) {
+      if (row[i] && typeof row[i] === 'string' && row[i].toString().trim().length > 0) {
+        // Si encontramos un texto que parece ser un producto, usarlo
+        const texto = row[i].toString().trim();
+        if (texto !== texto.toUpperCase() && !/^\([0-9]+\)$/.test(texto)) {
+          return {
+            producto: texto,
+            especificacion: ''
+          };
+        }
+      }
+    }
+    
+    return null;
+  }
+  
+  // Verificar si una fecha coincide con el filtro
+  private static matchesFilter(fecha: Date, filtro: FiltroFecha): boolean {
+    if (!fecha || isNaN(fecha.getTime())) return false;
+    
+    return fecha.getDate() === filtro.dia &&
+           fecha.getMonth() + 1 === filtro.mes &&
+           fecha.getFullYear() === filtro.año;
+  }
+  
+  // Detectar si una fila contiene un producto
+  private static isProductRow(row: any[]): boolean {
+    if (!row || row.length < 4) return false;
+    
+    // Un producto generalmente tiene valores numéricos en columnas de precios (>= 3)
+    let hasNumericValues = false;
+    for (let i = 3; i < row.length; i++) {
+      const cell = row[i];
+      if (cell !== undefined && cell !== null && cell !== '') {
+        if (typeof cell === 'number') {
+          hasNumericValues = true;
+          break;
+        }
+        if (typeof cell === 'string') {
+          const normalizedValue = cell.replace(',', '.');
+          if (!isNaN(parseFloat(normalizedValue))) {
+            hasNumericValues = true;
+            break;
+          }
+        }
+      }
+    }
+    
+    // Verificar si tiene texto en alguna de las primeras columnas que podría ser un producto
+    let hasProductText = false;
+    
+    // Primero verificar columna C (índice 2), que es la más común para productos
+    if (row[2] && typeof row[2] === 'string' && row[2].toString().trim().length > 0) {
+      const text = row[2].toString().trim();
+      // No debería ser un encabezado, notas, etc.
+      if (text !== text.toUpperCase() || /[a-z]/.test(text)) {
+        hasProductText = true;
+      }
+    }
+    
+    // Si no encontramos en columna C, buscar en columnas A o B
+    if (!hasProductText) {
+      for (let i = 0; i <= 1; i++) {
+        if (row[i] && typeof row[i] === 'string') {
+          const text = row[i].toString().trim();
+          // Debe tener texto y no ser solo un número o código entre paréntesis
+          if (text.length > 0 && !/^\([0-9]+\)$/.test(text) && text !== text.toUpperCase()) {
+            hasProductText = true;
+            break;
+          }
+        }
+      }
+    }
+    
+    return hasProductText && hasNumericValues;
+  }
+  
+  // Encontrar las filas de encabezados (semanas y fechas)
+  private static findHeaderRows(rows: any[][]): { headerWeekRow: number, headerDateRow: number, dataStartRow: number } | null {
+    // Buscar la fila que contiene "SEMANA" en alguna celda
+    let headerWeekRow = -1;
+    let headerDateRow = -1;
+    
+    for (let i = 0; i < Math.min(20, rows.length); i++) {
+      const row = rows[i];
+      if (!row || row.length < 3) continue;
+      
+      // Buscar texto "SEMANA" o "Semana" en la fila
+      const hasWeeks = row.some(cell => 
+        cell && typeof cell === 'string' && cell.toString().toLowerCase().includes('semana')
+      );
+      
+      if (hasWeeks) {
+        headerWeekRow = i;
+        // La fila de fechas generalmente está justo después
+        for (let j = i + 1; j < Math.min(i + 3, rows.length); j++) {
+          const dateRow = rows[j];
+          if (!dateRow || dateRow.length < 3) continue;
+          
+          // La fila de fechas contiene caracteres '/' o '-'
+          const hasDates = dateRow.some(cell => 
+            cell && typeof cell === 'string' && 
+            (cell.toString().includes('/') || cell.toString().includes('-'))
+          );
+          
+          if (hasDates) {
+            headerDateRow = j;
+            break;
+          }
+        }
+        
+        break;
+      }
+    }
+    
+    if (headerWeekRow !== -1 && headerDateRow !== -1) {
+      // La fila donde comienzan los datos es la siguiente a la fila de fechas
+      return {
+        headerWeekRow,
+        headerDateRow,
+        dataStartRow: headerDateRow + 1
+      };
+    }
+    
+    return null;
+  }
+  
+  // Extraer fechas de la fila de fechas
+  private static extractWeekDates(dateRow: any[], year: number): Date[] {
+    if (!dateRow) return [];
+    
+    // Las fechas generalmente comienzan en la columna 3 (índice D)
+    const dates: Date[] = [];
+    
+    for (let i = 3; i < dateRow.length; i++) {
+      const cell = dateRow[i];
+      if (!cell) {
+        dates.push(new Date(NaN)); // Fecha inválida si la celda está vacía
+        continue;
+      }
+      
+      try {
+        const date = this.parseDateString(cell.toString(), year);
+        dates.push(date);
+      } catch (e) {
+        console.error(`Error al parsear fecha: ${e}`);
+        dates.push(new Date(NaN));
+      }
+    }
+    
+    return dates;
+  }
+  
+  // Extraer el año del archivo
   private static extractYearFromRows(rows: any[][]): number {
     // Buscar el año en las primeras filas
-    for (let i = 0; i < 5; i++) {
-      if (rows[i] && rows[i].length > 0) {
-        // Buscar un número de 4 dígitos que represente un año
-        const rowText = JSON.stringify(rows[i]);
-        const yearMatch = rowText.match(/20\d{2}/);
-        if (yearMatch) {
-          return parseInt(yearMatch[0], 10);
-        }
+    for (let i = 0; i < Math.min(10, rows.length); i++) {
+      if (!rows[i]) continue;
+      
+      // Combinar toda la fila en un string para buscar
+      const rowText = rows[i].join(' ');
+      const yearMatch = rowText.match(/20\d{2}/);
+      
+      if (yearMatch) {
+        return parseInt(yearMatch[0], 10);
       }
     }
-    return new Date().getFullYear(); // Default a año actual
+    
+    // Si no se encuentra, usar el año actual
+    return new Date().getFullYear();
   }
-
-  private static parseDateRange(dateStr: string, year: number): Date {
-    try {
-      dateStr = dateStr.toString().trim();
+  
+  // Parsear string de fecha en varios formatos
+  private static parseDateString(dateStr: string, year: number): Date {
+    dateStr = dateStr.toString().trim();
+    
+    // Formato 1: "DD/MM - DD/MM" (ej: "30/01 - 05/02")
+    if (dateStr.includes('-') && dateStr.includes('/')) {
+      // Usar la segunda fecha (final del rango)
+      const parts = dateStr.split('-');
+      const endDatePart = parts[parts.length - 1].trim();
       
-      // Manejar diferentes formatos de fecha
-      let endDatePart = '';
-      
-      // Caso 1: "DD-DD/MM" (ej: "02-08/01")
-      if (dateStr.includes('-') && dateStr.includes('/') && dateStr.indexOf('-') < dateStr.indexOf('/')) {
-        const parts = dateStr.split('-');
-        endDatePart = parts[parts.length - 1];
-      } 
-      // Caso 2: "DD/MM-DD/MM" (ej: "30/01-05/02")
-      else if (dateStr.includes('-') && dateStr.includes('/') && dateStr.indexOf('-') > dateStr.indexOf('/')) {
-        const parts = dateStr.split('-');
-        endDatePart = parts[parts.length - 1];
+      if (endDatePart.includes('/')) {
+        const [day, month] = endDatePart.split('/').map(s => parseInt(s.trim(), 10));
+        return new Date(year, month - 1, day);
       }
-      // Caso 3: "DD/MM" (ej: "08/01")
-      else if (dateStr.includes('/') && !dateStr.includes('-')) {
-        endDatePart = dateStr;
-      }
-      // Caso 4: Número Excel (ej: 40392)
-      else if (!isNaN(Number(dateStr))) {
-        try {
-          const excelDate = XLSX.SSF.parse_date_code(Number(dateStr));
-          if (excelDate && excelDate.d && excelDate.m) {
-            return new Date(excelDate.y || year, excelDate.m - 1, excelDate.d);
-          }
-        } catch {
-          return new Date(NaN);
-        }
-      }
-      // Caso 5: Otro formato no soportado
-      else {
-        return new Date(NaN);
-      }
-      
-      // Extraer día y mes del final del rango
-      const dateMatch = endDatePart.match(/(\d{1,2})\/(\d{1,2})/);
-      if (dateMatch) {
-        const [_, day, month] = dateMatch;
-        return new Date(year, parseInt(month, 10) - 1, parseInt(day, 10));
-      }
-      
-      return new Date(NaN);
-    } catch (e) {
-      console.error("Error al parsear fecha:", e, dateStr);
-      return new Date(NaN);
     }
+    
+    // Formato 2: "DD/MM" (ej: "05/02")
+    if (dateStr.includes('/') && !dateStr.includes('-')) {
+      const [day, month] = dateStr.split('/').map(s => parseInt(s.trim(), 10));
+      return new Date(year, month - 1, day);
+    }
+    
+    // Formato 3: número de Excel
+    if (!isNaN(Number(dateStr))) {
+      const excelDate = XLSX.SSF.parse_date_code(Number(dateStr));
+      if (excelDate && excelDate.d && excelDate.m) {
+        return new Date(excelDate.y || year, excelDate.m - 1, excelDate.d);
+      }
+    }
+    
+    // Si no se pudo parsear, retornar fecha inválida
+    return new Date(NaN);
   }
-
+  
+  // Parsear valor numérico
   private static parseValue(value: any): number | null {
-    if (value === '-' || value === undefined || value === null) return null;
+    if (!value || value === '-') return null;
+    
     if (typeof value === 'number') return value;
+    
     if (typeof value === 'string') {
-      // Reemplaza la coma por punto para el formato europeo
-      return parseFloat(value.replace(',', '.'));
+      // Manejar valores con coma decimal (formato europeo)
+      const normalizedValue = value.replace(',', '.');
+      const parsed = parseFloat(normalizedValue);
+      
+      return isNaN(parsed) ? null : parsed;
     }
+    
     return null;
   }
 }
+
+
