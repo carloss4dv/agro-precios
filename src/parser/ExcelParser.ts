@@ -70,11 +70,14 @@ export class ExcelParser {
               valor = this.parseValue(row[j + 3]);
             }
             
-            preciosSemanales.push({
-              semana: `Semana ${String(j + 1).padStart(2, '0')}`,
-              fecha: weekDates[j],
-              valor: valor
-            });
+            // Solo agregar entradas con valores no nulos
+            if (valor !== null) {
+              preciosSemanales.push({
+                semana: `Semana ${String(j + 1).padStart(2, '0')}`,
+                fecha: weekDates[j],
+                valor: valor
+              });
+            }
           }
           
           // Filtrar por fecha si es necesario
@@ -336,20 +339,45 @@ export class ExcelParser {
     
     // Las fechas generalmente comienzan en la columna 3 (índice D)
     const dates: Date[] = [];
+    let lastValidDate: Date | null = null;
     
     for (let i = 3; i < dateRow.length; i++) {
       const cell = dateRow[i];
-      if (!cell) {
-        dates.push(new Date(NaN)); // Fecha inválida si la celda está vacía
-        continue;
-      }
       
       try {
-        const date = this.parseDateString(cell.toString(), year);
-        dates.push(date);
+        // Intentar parsear la fecha
+        const date = cell ? this.parseDateString(cell.toString(), year) : new Date(NaN);
+        
+        // Si es válida, usarla. Si no, usar la última fecha válida + 7 días
+        if (date && !isNaN(date.getTime())) {
+          dates.push(date);
+          lastValidDate = new Date(date); // Crear una copia
+        } else if (lastValidDate) {
+          // Si tenemos una fecha válida previa, calcular la siguiente
+          const nextDate: Date = new Date(lastValidDate);
+          nextDate.setDate(nextDate.getDate() + 7); // Agregar 7 días
+          dates.push(nextDate);
+          lastValidDate = nextDate;
+        } else {
+          // No tenemos fechas válidas anteriores, usar una estimada basada en la posición
+          // Primera semana de enero + (índice - 3) * 7 días
+          const estimatedDate = new Date(year, 0, 1 + (i - 3) * 7);
+          dates.push(estimatedDate);
+          lastValidDate = estimatedDate;
+        }
       } catch (e) {
-        console.error(`Error al parsear fecha: ${e}`);
-        dates.push(new Date(NaN));
+        console.error(`Error al procesar fecha en columna ${i}: ${e}`);
+        // En caso de error, mantener continuidad con la última fecha o estimación
+        if (lastValidDate) {
+          const nextDate: Date = new Date(lastValidDate);
+          nextDate.setDate(nextDate.getDate() + 7);
+          dates.push(nextDate);
+          lastValidDate = nextDate;
+        } else {
+          const estimatedDate = new Date(year, 0, 1 + (i - 3) * 7);
+          dates.push(estimatedDate);
+          lastValidDate = estimatedDate;
+        }
       }
     }
     
@@ -376,51 +404,233 @@ export class ExcelParser {
   }
   
   // Parsear string de fecha en varios formatos
-  private static parseDateString(dateStr: string, year: number): Date {
+  static parseDateString(dateStr: string, year: number): Date {
+    if (!dateStr) return new Date(NaN);
+    
+    // Para depuración
+    const originalStr = dateStr.toString().trim();
+    let debugInfo = false;
+    
+    // Casos especiales conocidos para asegurar corrección manual
+    if (originalStr.includes('-') && originalStr.includes('/')) {
+      const manualPattern1 = /(\d+)\/(\d+)\s*-\s*(\d+)\/(\d+)/;
+      const match = originalStr.match(manualPattern1);
+      
+      if (match) {
+        const startDay = parseInt(match[1], 10);
+        const startMonth = parseInt(match[2], 10);
+        const endDay = parseInt(match[3], 10);
+        const endMonth = parseInt(match[4], 10);
+        
+        // Si es un cambio de año (diciembre a enero)
+        if (startMonth === 12 && endMonth === 1) {
+          return new Date(year + 1, 0, endDay);
+        }
+        
+        // Rango normal sin cambio de año
+        if (!isNaN(endDay) && !isNaN(endMonth) && 
+            endMonth >= 1 && endMonth <= 12 && 
+            endDay >= 1 && endDay <= 31) {
+          return new Date(year, endMonth - 1, endDay);
+        }
+      }
+    }
+    
     dateStr = dateStr.toString().trim();
     
+    // Si es un número que representa una fecha Excel, convertirlo
+    if (typeof dateStr === 'number' || !isNaN(Number(dateStr))) {
+      try {
+        const excelDate = XLSX.SSF.parse_date_code(Number(dateStr));
+        if (excelDate && excelDate.d && excelDate.m) {
+          const y = excelDate.y || year;
+          return new Date(y, excelDate.m - 1, excelDate.d);
+        }
+      } catch (e) {
+        console.error(`Error al parsear fecha Excel ${dateStr}: ${e}`);
+      }
+    }
+    
+    // Formato con año incluido (ej: DD/MM/YYYY)
+    if (dateStr.split('/').length === 3) {
+      try {
+        const [day, month, specificYear] = dateStr.split('/').map(s => parseInt(s.trim(), 10));
+        if (!isNaN(day) && !isNaN(month) && !isNaN(specificYear) && 
+            month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+          // Usar el año específico en lugar del año general
+          return new Date(specificYear, month - 1, day);
+        }
+      } catch (e) {
+        console.error(`Error al parsear fecha con año específico ${dateStr}: ${e}`);
+      }
+    }
+    
     // Formato 1: "DD/MM - DD/MM" (ej: "30/01 - 05/02")
-    if (dateStr.includes('-') && dateStr.includes('/')) {
-      // Usar la segunda fecha (final del rango)
-      const parts = dateStr.split('-');
-      const endDatePart = parts[parts.length - 1].trim();
-      
-      if (endDatePart.includes('/')) {
-        const [day, month] = endDatePart.split('/').map(s => parseInt(s.trim(), 10));
-        return new Date(year, month - 1, day);
+    // Identificar si es un rango de fechas separado por un guión
+    if (dateStr.includes('-')) {
+      try {
+        const parts = dateStr.split('-');
+        
+        // Si tenemos exactamente dos partes separadas por guión
+        if (parts.length === 2) {
+          const startPart = parts[0].trim();
+          const endPart = parts[1].trim();
+          
+          // Si ambas partes tienen formato de fecha con barra (DD/MM)
+          if (startPart.includes('/') && endPart.includes('/')) {
+            // Extraer día y mes de ambas partes
+            const startComponents = startPart.split('/');
+            const endComponents = endPart.split('/');
+            
+            if (startComponents.length >= 2 && endComponents.length >= 2) {
+              const startDay = parseInt(startComponents[0], 10);
+              const startMonth = parseInt(startComponents[1], 10);
+              const endDay = parseInt(endComponents[0], 10);
+              const endMonth = parseInt(endComponents[1], 10);
+              
+              // Verificar que los valores sean números válidos y dentro de rangos correctos
+              if (!isNaN(startDay) && !isNaN(startMonth) && !isNaN(endDay) && !isNaN(endMonth) &&
+                  startMonth >= 1 && startMonth <= 12 && endMonth >= 1 && endMonth <= 12 &&
+                  startDay >= 1 && startDay <= 31 && endDay >= 1 && endDay <= 31) {
+                
+                // Caso especial: determinar cambio de año (diciembre -> enero)
+                if (startMonth === 12 && endMonth === 1) {
+                  // Usar año siguiente para la fecha final
+                  return new Date(year + 1, 0, endDay);
+                } else {
+                  // Usar la fecha final del rango con el año actual
+                  return new Date(year, endMonth - 1, endDay);
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error(`Error al parsear fecha con rango ${dateStr}: ${e}`);
       }
     }
     
     // Formato 2: "DD/MM" (ej: "05/02")
     if (dateStr.includes('/') && !dateStr.includes('-')) {
-      const [day, month] = dateStr.split('/').map(s => parseInt(s.trim(), 10));
-      return new Date(year, month - 1, day);
+      try {
+        const [day, month] = dateStr.split('/').map(s => parseInt(s.trim(), 10));
+        if (!isNaN(day) && !isNaN(month) && month >= 1 && month <= 12 && day >= 1) {
+          // Validar días según el mes, teniendo en cuenta años bisiestos
+          const diasPorMes = [31, (this.esBisiesto(year) ? 29 : 28), 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+          if (day <= diasPorMes[month - 1]) {
+            return new Date(year, month - 1, day);
+          } else {
+            // Si el día no es válido para el mes (como 29/02 en año no bisiesto)
+            // usar el último día del mes
+            return new Date(year, month - 1, diasPorMes[month - 1]);
+          }
+        }
+      } catch (e) {
+        console.error(`Error al parsear fecha simple ${dateStr}: ${e}`);
+      }
     }
     
-    // Formato 3: número de Excel
-    if (!isNaN(Number(dateStr))) {
-      const excelDate = XLSX.SSF.parse_date_code(Number(dateStr));
-      if (excelDate && excelDate.d && excelDate.m) {
-        return new Date(excelDate.y || year, excelDate.m - 1, excelDate.d);
+    // Formato con guión: DD-MMM (ej: "15-ENE")
+    if (dateStr.includes('-') && !dateStr.includes('/')) {
+      try {
+        const parts = dateStr.split('-');
+        if (parts.length === 2) {
+          const day = parseInt(parts[0].trim(), 10);
+          const monthText = parts[1].trim().toLowerCase();
+          
+          const meses = {
+            'ene': 0, 'enero': 0, 'jan': 0, 'january': 0,
+            'feb': 1, 'febrero': 1, 'february': 1,
+            'mar': 2, 'marzo': 2, 'march': 2,
+            'abr': 3, 'abril': 3, 'apr': 3, 'april': 3,
+            'may': 4, 'mayo': 4,
+            'jun': 5, 'junio': 5, 'june': 5,
+            'jul': 6, 'julio': 6, 'july': 6,
+            'ago': 7, 'agosto': 7, 'aug': 7, 'august': 7,
+            'sep': 8, 'septiembre': 8, 'sept': 8, 'september': 8,
+            'oct': 9, 'octubre': 9, 'october': 9,
+            'nov': 10, 'noviembre': 10, 'november': 10,
+            'dic': 11, 'diciembre': 11, 'dec': 11, 'december': 11
+          };
+          
+          // Buscar cualquier coincidencia con nombres de meses en el texto
+          for (const [abbr, monthIndex] of Object.entries(meses)) {
+            if (monthText.includes(abbr)) {
+              if (!isNaN(day) && day >= 1 && day <= 31) {
+                return new Date(year, monthIndex, day);
+              }
+              break;
+            }
+          }
+        }
+      } catch (e) {
+        console.error(`Error al parsear fecha con guión ${dateStr}: ${e}`);
       }
+    }
+    
+    // Si llegamos aquí, intentar buscar patrones de fecha en el texto
+    try {
+      // Búsqueda de patrones como "DD mes" o "mes DD"
+      const meses = {
+        'ene': 0, 'enero': 0, 'jan': 0, 'january': 0,
+        'feb': 1, 'febrero': 1, 'february': 1,
+        'mar': 2, 'marzo': 2, 'march': 2,
+        'abr': 3, 'abril': 3, 'apr': 3, 'april': 3,
+        'may': 4, 'mayo': 4,
+        'jun': 5, 'junio': 5, 'june': 5,
+        'jul': 6, 'julio': 6, 'july': 6,
+        'ago': 7, 'agosto': 7, 'aug': 7, 'august': 7,
+        'sep': 8, 'septiembre': 8, 'sept': 8, 'september': 8,
+        'oct': 9, 'octubre': 9, 'october': 9,
+        'nov': 10, 'noviembre': 10, 'november': 10,
+        'dic': 11, 'diciembre': 11, 'dec': 11, 'december': 11
+      };
+      
+      const dateLower = dateStr.toLowerCase();
+      
+      // Buscar coincidencia con algún mes
+      for (const [nombreMes, indiceMes] of Object.entries(meses)) {
+        if (dateLower.includes(nombreMes)) {
+          // Buscar dígitos cerca del nombre del mes
+          const digitsMatch = dateLower.match(/\d+/);
+          if (digitsMatch) {
+            const day = parseInt(digitsMatch[0], 10);
+            if (!isNaN(day) && day >= 1 && day <= 31) {
+              return new Date(year, indiceMes, day);
+            }
+          }
+          break;
+        }
+      }
+    } catch (e) {
+      console.error(`Error al buscar patrones de fecha en ${dateStr}: ${e}`);
     }
     
     // Si no se pudo parsear, retornar fecha inválida
     return new Date(NaN);
   }
   
+  // Método auxiliar para determinar si un año es bisiesto
+  private static esBisiesto(year: number): boolean {
+    return (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+  }
+  
   // Parsear valor numérico
   private static parseValue(value: any): number | null {
     if (!value || value === '-') return null;
     
-    if (typeof value === 'number') return value;
+    if (typeof value === 'number') {
+      // Si el valor es 0 o negativo, considerarlo como nulo
+      return value <= 0 ? null : value;
+    }
     
     if (typeof value === 'string') {
       // Manejar valores con coma decimal (formato europeo)
       const normalizedValue = value.replace(',', '.');
       const parsed = parseFloat(normalizedValue);
       
-      return isNaN(parsed) ? null : parsed;
+      // Verificar si es un número válido y mayor que cero
+      return isNaN(parsed) || parsed <= 0 ? null : parsed;
     }
     
     return null;
@@ -675,6 +885,21 @@ export class ExcelParser {
     }
 
     return sector || 'SEMILLAS OLEAGINOSAS, PROTEICOS Y TORTAS';  // Por defecto, si no hay sector
+  }
+
+  // Método para convertir una fecha JavaScript a número serial de Excel
+  // Este método es útil para pruebas y está expuesto para fines de testing
+  static dateToExcelSerial(date: Date): number {
+    // Fecha base de Excel: 1/1/1900
+    // Excel incorrectamente asume que 1900 es un año bisiesto, por lo que hay que ajustar
+    const baseDate = new Date(1899, 11, 30); // 30 de diciembre de 1899
+    const msPerDay = 24 * 60 * 60 * 1000;
+    
+    // Diferencia en días
+    let days = Math.round((date.getTime() - baseDate.getTime()) / msPerDay);
+    
+    // En Excel, los días se cuentan a partir del 1 (1/1/1900 = 1)
+    return days;
   }
 }
 
