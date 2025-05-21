@@ -433,11 +433,144 @@ export class ExcelParser {
       return 'ACEITE';
     }
 
-    // Corregir clasificación de productos de pipas de girasol
-    if (sector === 'VINO' && 
-        (producto.toLowerCase().includes('pipa de girasol') || 
-         producto.toLowerCase().includes('pipas de girasol'))) {
-      return 'ACEITE';
+    const productoLower = producto.toLowerCase();
+
+    // Corrección de productos erroneamente clasificados en VINO
+    if (sector === 'VINO') {
+      // Productos de semillas oleaginosas frecuentemente clasificados como VINO
+      if (productoLower.includes('colza') || 
+          productoLower.includes('girasol') || 
+          productoLower.includes('soja') || 
+          productoLower.includes('guisante') || 
+          productoLower.includes('lenteja') || 
+          productoLower.includes('haba') || 
+          productoLower.includes('garbanzo') || 
+          productoLower.includes('alfalfa') || 
+          productoLower.includes('torta') || 
+          productoLower.includes('semilla') || 
+          productoLower.includes('proteico')) {
+        return 'SEMILLAS OLEAGINOSAS, PROTEICOS Y TORTAS';
+      }
+    }
+
+    // Corregir frutas y hortalizas en el sector incorrecto
+    if (sector !== 'FRUTAS' && sector !== 'HORTALIZAS') {
+      // Frutas comunes
+      if (productoLower.includes('manzana') || 
+          productoLower.includes('pera') || 
+          productoLower.includes('plátano') || 
+          productoLower.includes('naranja') || 
+          productoLower.includes('mandarina') || 
+          productoLower.includes('limón') || 
+          productoLower.includes('melocotón') || 
+          productoLower.includes('nectarina') || 
+          productoLower.includes('uva') || 
+          productoLower.includes('melón') || 
+          productoLower.includes('sandía') || 
+          productoLower.includes('cereza') || 
+          productoLower.includes('ciruela') || 
+          productoLower.includes('fresa') || 
+          productoLower.includes('aguacate') || 
+          productoLower.includes('clementina') || 
+          productoLower.includes('satsuma')) {
+        return 'FRUTAS';
+      }
+
+      // Hortalizas comunes
+      if (productoLower.includes('tomate') || 
+          productoLower.includes('patata') || 
+          productoLower.includes('cebolla') || 
+          productoLower.includes('ajo') || 
+          productoLower.includes('pimiento') || 
+          productoLower.includes('calabacín') || 
+          productoLower.includes('judía') || 
+          productoLower.includes('berenjena') || 
+          productoLower.includes('zanahoria') || 
+          productoLower.includes('lechuga') || 
+          productoLower.includes('escarola') || 
+          productoLower.includes('espinaca') || 
+          productoLower.includes('alcachofa') || 
+          productoLower.includes('coliflor') || 
+          productoLower.includes('brócoli') || 
+          productoLower.includes('col') || 
+          productoLower.includes('repollo') || 
+          productoLower.includes('pepino')) {
+        return 'HORTALIZAS';
+      }
+    }
+
+    // Corregir productos de aves y huevos
+    if (sector !== 'AVES, HUEVOS, CAZA') {
+      if (productoLower.includes('pollo') || 
+          productoLower.includes('gallina') || 
+          productoLower.includes('huevo') || 
+          productoLower.includes('ave') || 
+          productoLower.includes('conejo')) {
+        return 'AVES, HUEVOS, CAZA';
+      }
+    }
+
+    // Corregir productos lácteos
+    if (sector !== 'LÁCTEOS') {
+      if (productoLower.includes('leche') || 
+          productoLower.includes('queso') || 
+          productoLower.includes('mantequilla') || 
+          productoLower.includes('nata') || 
+          productoLower.includes('yogur')) {
+        return 'LÁCTEOS';
+      }
+    }
+
+    // Corregir productos de cereales
+    if (sector !== 'CEREALES') {
+      if (productoLower.includes('trigo') || 
+          productoLower.includes('cebada') || 
+          productoLower.includes('maíz') || 
+          productoLower.includes('avena') || 
+          productoLower.includes('centeno') || 
+          productoLower.includes('sorgo')) {
+        return 'CEREALES';
+      }
+    }
+
+    // Corregir productos de arroz
+    if (sector !== 'ARROZ' && productoLower.includes('arroz')) {
+      return 'ARROZ';
+    }
+
+    // Corregir productos cárnicos
+    if (sector !== 'BOVINO' && 
+        (productoLower.includes('bovino') || 
+         productoLower.includes('vacuno') || 
+         productoLower.includes('ternera'))) {
+      return 'BOVINO';
+    }
+
+    if (sector !== 'PORCINO' && 
+        (productoLower.includes('cerdo') || 
+         productoLower.includes('porcino') || 
+         productoLower.includes('lechón'))) {
+      return 'PORCINO';
+    }
+
+    if (sector !== 'OVINO' && 
+        (productoLower.includes('cordero') || 
+         productoLower.includes('ovino') || 
+         productoLower.includes('oveja'))) {
+      return 'OVINO';
+    }
+
+    // Corregir productos de aceite y aceituna
+    if (sector !== 'ACEITES VEGETALES Y ACEITUNA DE MESA' && 
+        (productoLower.includes('aceite') || 
+         productoLower.includes('oliva') || 
+         productoLower.includes('aceituna'))) {
+      return 'ACEITES VEGETALES Y ACEITUNA DE MESA';
+    }
+
+    // Corregir productos de vino
+    if (sector !== 'VINO' && productoLower.includes('vino')) {
+      return 'VINO';
     }
 
     return sector;
