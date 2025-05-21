@@ -56,6 +56,9 @@ export class ExcelParser {
         if (productoInfo) {
           const { producto, especificacion } = productoInfo;
           
+          // Corregir el sector basado en el producto
+          const sectorCorregido = this.corregirSectorProducto(currentSector, producto, especificacion);
+          
           // Extraer los precios semanales
           const preciosSemanales = [];
           
@@ -82,7 +85,7 @@ export class ExcelParser {
           // Sólo agregar si hay precios después del filtrado o no hay filtro
           if (!filtro || preciosFiltrados.length > 0) {
             precios.push({
-              sector: currentSector,
+              sector: sectorCorregido,
               producto,
               especificacion,
               precios: preciosFiltrados
@@ -185,8 +188,13 @@ export class ExcelParser {
     if (row[2] && typeof row[2] === 'string' && row[2].toString().trim().length > 0) {
       // La especificación normalmente está en la columna 1 (índice B)
       const especificacion = row[1] ? row[1].toString().trim() : '';
+      const producto = row[2].toString().trim();
+      
+      // Corregir errores ortográficos en productos
+      const productoCorregido = producto.replace(/\bAceie\b/gi, 'Aceite');
+      
       return {
-        producto: row[2].toString().trim(),
+        producto: productoCorregido,
         especificacion
       };
     }
@@ -196,9 +204,12 @@ export class ExcelParser {
       if (row[i] && typeof row[i] === 'string' && row[i].toString().trim().length > 0) {
         // Si encontramos un texto que parece ser un producto, usarlo
         const texto = row[i].toString().trim();
-        if (texto !== texto.toUpperCase() && !/^\([0-9]+\)$/.test(texto)) {
+        // Corregir errores ortográficos en productos
+        const textoCorregido = texto.replace(/\bAceie\b/gi, 'Aceite');
+        
+        if (textoCorregido !== textoCorregido.toUpperCase() && !/^\([0-9]+\)$/.test(textoCorregido)) {
           return {
-            producto: texto,
+            producto: textoCorregido,
             especificacion: ''
           };
         }
@@ -413,6 +424,23 @@ export class ExcelParser {
     }
     
     return null;
+  }
+
+  // Corregir el sector basado en el producto
+  private static corregirSectorProducto(sector: string, producto: string, especificacion: string): string {
+    // Corregir "ACEIE" a "ACEITE"
+    if (sector === 'ACEIE') {
+      return 'ACEITE';
+    }
+
+    // Corregir clasificación de productos de pipas de girasol
+    if (sector === 'VINO' && 
+        (producto.toLowerCase().includes('pipa de girasol') || 
+         producto.toLowerCase().includes('pipas de girasol'))) {
+      return 'ACEITE';
+    }
+
+    return sector;
   }
 }
 

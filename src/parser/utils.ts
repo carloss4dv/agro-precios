@@ -32,6 +32,12 @@ const obtenerTasaConversion = (producto: string): number => {
         return 0.01;
       }
     }
+
+    // Conversiones específicas para productos de pipas de girasol
+    if (textoLimpio.includes('pipa de girasol') || textoLimpio.includes('pipas de girasol')) {
+      // Asumiendo que las pipas de girasol están en €/tonelada
+      return 0.001;  // De €/tonelada a €/kg
+    }
     
     // Patrones generales de unidades
     if (textoLimpio.includes('(€/kg)') || textoLimpio.includes('euros/kg') || textoLimpio.includes('€/kg') || textoLimpio.includes('eur/kg')) {
