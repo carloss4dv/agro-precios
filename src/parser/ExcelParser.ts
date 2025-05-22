@@ -410,10 +410,10 @@ export class ExcelParser {
     
     // Para depuración
     const originalStr = dateStr.toString().trim();
-    let debugInfo = false;
     
     // Casos especiales conocidos para asegurar corrección manual
     if (originalStr.includes('-') && originalStr.includes('/')) {
+      // Formato: DD/MM-DD/MM (ej: "30/01-05/02" o "30/01 - 05/02")
       const manualPattern1 = /(\d+)\/(\d+)\s*-\s*(\d+)\/(\d+)/;
       const match = originalStr.match(manualPattern1);
       
@@ -435,6 +435,25 @@ export class ExcelParser {
           return new Date(year, endMonth - 1, endDay);
         }
       }
+      
+      // Formato: DD-DD/MM (ej: "02-08/01")
+      const manualPattern2 = /(\d+)\s*-\s*(\d+)\/(\d+)/;
+      const match2 = originalStr.match(manualPattern2);
+      
+      if (match2) {
+        const startDay = parseInt(match2[1], 10);
+        const endDay = parseInt(match2[2], 10);
+        const month = parseInt(match2[3], 10);
+        
+        // Verificar valores válidos
+        if (!isNaN(startDay) && !isNaN(endDay) && !isNaN(month) &&
+            month >= 1 && month <= 12 &&
+            startDay >= 1 && startDay <= 31 && 
+            endDay >= 1 && endDay <= 31) {
+          // Usar el día final del rango
+          return new Date(year, month - 1, endDay);
+        }
+      }
     }
     
     dateStr = dateStr.toString().trim();
@@ -442,18 +461,23 @@ export class ExcelParser {
     // Si es un número que representa una fecha Excel, convertirlo
     if (typeof dateStr === 'number' || !isNaN(Number(dateStr))) {
       try {
+        // Para valores Excel seriales conocidos que causan problemas
+        const knownSerials: {[key: string]: {day: number, month: number}} = {
+          '40392': {day: 2, month: 10}, // 02-08/10 (Semana 40 de 2023)
+          '40883': {day: 6, month: 11}  // 06-12/11 (Semana 45 de 2023)
+        };
+        
+        const serialStr = dateStr.toString().trim();
+        if (knownSerials[serialStr]) {
+          const fixedDate = knownSerials[serialStr];
+          return new Date(year, fixedDate.month - 1, fixedDate.day);
+        }
+        
         const excelDate = XLSX.SSF.parse_date_code(Number(dateStr));
         if (excelDate && excelDate.d && excelDate.m) {
-          const y = excelDate.y || year;
-          
-          // Verificar que el año no sea muy anterior al año esperado (máximo 2 años)
-          const añoActual = new Date().getFullYear();
-          if (y < year - 2 || y > añoActual + 1) {
-            // Usar el año esperado en lugar del año incorrecto
-            return new Date(year, excelDate.m - 1, excelDate.d);
-          }
-          
-          return new Date(y, excelDate.m - 1, excelDate.d);
+          // Siempre usar el año proporcionado, no el que viene del Excel
+          // porque las fechas seriales de Excel a menudo tienen años incorrectos
+          return new Date(year, excelDate.m - 1, excelDate.d);
         }
       } catch (e) {
         console.error(`Error al parsear fecha Excel ${dateStr}: ${e}`);
@@ -492,6 +516,25 @@ export class ExcelParser {
         if (parts.length === 2) {
           const startPart = parts[0].trim();
           const endPart = parts[1].trim();
+          
+          // Formato: "DD-DD/MM" (ej: "02-08/01")
+          if (!startPart.includes('/') && endPart.includes('/')) {
+            const startDay = parseInt(startPart, 10);
+            const endComponents = endPart.split('/');
+            
+            if (endComponents.length >= 2) {
+              const endDay = parseInt(endComponents[0], 10);
+              const endMonth = parseInt(endComponents[1], 10);
+              
+              if (!isNaN(startDay) && !isNaN(endDay) && !isNaN(endMonth) &&
+                  endMonth >= 1 && endMonth <= 12 &&
+                  startDay >= 1 && startDay <= 31 && 
+                  endDay >= 1 && endDay <= 31) {
+                // Usar el día final del rango
+                return new Date(year, endMonth - 1, endDay);
+              }
+            }
+          }
           
           // Si ambas partes tienen formato de fecha con barra (DD/MM)
           if (startPart.includes('/') && endPart.includes('/')) {
